@@ -1,10 +1,6 @@
 [workspace]
 members = ["contracts/*"]
 
-[profile.release.package.cw20-jt-merkle-airdrop]
-codegen-units = 1
-incremental = false
-
 [profile.release.package.jt-airdrop-controller]
 codegen-units = 1
 incremental = false
