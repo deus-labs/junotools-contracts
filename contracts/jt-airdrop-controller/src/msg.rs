@@ -1,5 +1,4 @@
 use cosmwasm_std::{Addr, Uint128, Uint64};
-use cw20::Cw20ReceiveMsg;
 use cw_utils::Expiration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -19,13 +18,17 @@ pub struct InstantiateMsg {
 #[serde(rename_all = "snake_case")]
 pub enum ExecuteMsg {
     UpdateConfig {
-        owner: Option<String>,
+        admin: Option<String>,
+        release_addr: Option<String>,
         escrow_amount: Option<Uint128>,
+        default_release_height: Option<Uint64>,
+        allowed_native: Option<String>,
     },
-    ReleaseLockedFunds {},
+    ReleaseLockedFunds {
+        airdrop_addr: String,
+    },
     LockFunds {
-        creator: String,
-        contract_addr: String,
+        airdrop_addr: String,
     },
 }
 

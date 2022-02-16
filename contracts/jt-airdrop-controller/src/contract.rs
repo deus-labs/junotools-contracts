@@ -2,7 +2,7 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, Order, QueryRequest, Response, StdResult, Uint128, WasmQuery,
+    MessageInfo, Order, QueryRequest, Response, StdResult, Uint128, Uint64, WasmQuery,
 };
 use cw2::set_contract_version;
 use cw20::Balance::Native;
@@ -61,15 +61,69 @@ pub fn instantiate(
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn execute(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::UpdateConfig { .. } => unimplemented!(),
-        ExecuteMsg::ReleaseLockedFunds { .. } => unimplemented!(),
-        ExecuteMsg::LockFunds { .. } => unimplemented!(),
+        ExecuteMsg::UpdateConfig {
+            admin,
+            release_addr,
+            escrow_amount,
+            default_release_height,
+            allowed_native,
+        } => execute_update_config(
+            deps,
+            info,
+            env,
+            admin,
+            release_addr,
+            escrow_amount,
+            default_release_height,
+            allowed_native,
+        ),
+        ExecuteMsg::ReleaseLockedFunds { airdrop_addr } => {
+            execute_release_funds(deps, info, env, airdrop_addr)
+        }
+        ExecuteMsg::LockFunds { airdrop_addr } => execute_lock_funds(deps, info, env, airdrop_addr),
     }
+}
+
+pub fn execute_update_config(
+    deps: DepsMut,
+    info: MessageInfo,
+    _env: Env,
+    admin: Option<String>,
+    release_addr: Option<String>,
+    escrow_amount: Option<Uint128>,
+    default_release_height: Option<Uint64>,
+    allowed_native: Option<String>,
+) -> Result<Response, ContractError> {
+    // authorize owner
+    let mut cfg = CONFIG.load(deps.storage)?;
+    if info.sender != cfg.admin {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    if let Some(admin) = admin {
+        cfg.admin = deps.api.addr_validate(&admin)?;
+    }
+    if let Some(release_addr) = release_addr {
+        cfg.release_addr = deps.api.addr_validate(&release_addr)?;
+    }
+    if let Some(escrow_amount) = escrow_amount {
+        cfg.escrow_amount = escrow_amount;
+    }
+    if let Some(default_release_height) = default_release_height {
+        cfg.default_release_height = default_release_height;
+    }
+    if let Some(allowed_native) = allowed_native {
+        cfg.allowed_native = allowed_native;
+    }
+
+    CONFIG.save(deps.storage, &cfg)?;
+
+    Ok(Response::new().add_attribute("action", "update_config"))
 }
 
 pub fn execute_lock_funds(
@@ -258,42 +312,26 @@ fn query_list_escrows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmwasm_std::testing::{mock_dependencies_with_balance, mock_env, mock_info};
-    use cosmwasm_std::{coins, from_binary};
+    use cosmwasm_std::testing::{
+        mock_dependencies, mock_dependencies_with_balance, mock_env, mock_info,
+    };
+    use cosmwasm_std::{coins, from_binary, Uint64};
 
     #[test]
-    fn proper_initialization() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
+    fn lock_funds() {
+        let mut deps = mock_dependencies();
+        let admin = "admin";
+        let release_addr = "release_addr";
 
         let msg = InstantiateMsg {
-            admin: None,
-            release_addr: None,
-            escrow_amount: Default::default(),
-            allowed_native: "".to_string(),
-            default_release_height: Default::default(),
+            admin: Some(admin.to_string()),
+            release_addr: Some(release_addr.to_string()),
+            escrow_amount: Uint128::new(100),
+            allowed_native: "ujunox".to_string(),
+            default_release_height: Uint64::new(30),
         };
-        let info = mock_info("creator", &coins(1000, "earth"));
 
-        // we can just call .unwrap() to assert this was a success
-        let res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
-        assert_eq!(0, res.messages.len());
-
-        // it worked, let's query the state
-        let res = query(deps.as_ref(), mock_env(), QueryMsg::Config {}).unwrap();
-    }
-
-    #[test]
-    fn increment() {
-        let mut deps = mock_dependencies_with_balance(&coins(2, "token"));
-
-        let msg = InstantiateMsg {
-            admin: None,
-            release_addr: None,
-            escrow_amount: Default::default(),
-            allowed_native: "".to_string(),
-            default_release_height: Default::default(),
-        };
-        let info = mock_info("creator", &coins(2, "token"));
+        let info = mock_info("creator", &[]);
         let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
     }
 }
