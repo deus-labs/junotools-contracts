@@ -2,17 +2,22 @@
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
     from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, QueryRequest, Response, StdResult, Uint128, WasmQuery,
+    MessageInfo, Order, QueryRequest, Response, StdResult, Uint128, WasmQuery,
 };
 use cw2::set_contract_version;
 use cw20::Balance::Native;
 use cw20::{Balance, Cw20CoinVerified, Cw20ReceiveMsg};
 use cw20_merkle_airdrop::msg::LatestStageResponse;
 use cw20_merkle_airdrop::msg::QueryMsg::LatestStage;
+use cw_storage_plus::Bound;
 use cw_utils::{Expiration, NativeBalance};
+use std::ops::Add;
 
 use crate::error::ContractError;
-use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, QueryMsg, ReceiveMsg};
+use crate::msg::QueryMsg::ListEscrows;
+use crate::msg::{
+    ConfigResponse, EscrowResponse, ExecuteMsg, InstantiateMsg, ListEscrowsResponse, QueryMsg,
+};
 use crate::state::{Config, Escrow, CONFIG, ESCROWS};
 
 // version info for migration info
@@ -28,15 +33,16 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     let admin = msg
         .admin
+        .clone()
         .map_or(Ok(info.sender), |o| deps.api.addr_validate(&o))?;
 
     let release_addr = msg
-        .admin
+        .release_addr
         .map_or(Ok(admin.clone()), |o| deps.api.addr_validate(&o))?;
 
     let config = Config {
         admin: admin.clone(),
-        release_addr,
+        release_addr: release_addr.clone(),
         escrow_amount: msg.escrow_amount,
         default_release_height: msg.default_release_height,
         allowed_native: msg.allowed_native,
@@ -91,7 +97,7 @@ pub fn execute_lock_funds(
     let res: LatestStageResponse = deps.querier.query(&req)?;
     let escrow = Escrow {
         source: info.sender.clone(),
-        expiration: Expiration::AtHeight(env.block.height + cfg.default_release_height),
+        expiration: Expiration::AtHeight(cfg.default_release_height.u64() + env.block.height),
         escrow_amount: cfg.escrow_amount,
         latest_stage: res.latest_stage,
         released: false,
@@ -101,9 +107,9 @@ pub fn execute_lock_funds(
 
     let res = Response::new().add_attributes(vec![
         ("action", "lock_funds"),
-        ("amount", cfg.escrow_amount),
-        ("sender", info.sender),
-        ("airdrop_addr", airdrop_contract_addr),
+        ("amount", &cfg.escrow_amount.to_string()),
+        ("sender", &info.sender.to_string()),
+        ("airdrop_addr", &airdrop_contract_addr),
     ]);
 
     Ok(res)
@@ -139,11 +145,11 @@ pub fn execute_release_funds(
 
         let res = Response::new()
             .add_message(CosmosMsg::from(send_fund_msg))
-            .add_events(vec![
+            .add_attributes(vec![
                 ("action", "release_funds"),
-                ("escrow_amount", cfg.escrow_amount),
-                ("release_addr", cfg.release_addr.to_string()),
-                ("airdrop_addr", airdrop_addr),
+                ("escrow_amount", &cfg.escrow_amount.to_string()),
+                ("release_addr", &cfg.release_addr.to_string()),
+                ("airdrop_addr", &airdrop_addr.to_string()),
             ]);
         return Ok(res);
     }
@@ -172,11 +178,11 @@ pub fn execute_release_funds(
 
         let res = Response::new()
             .add_message(CosmosMsg::from(send_fund_msg))
-            .add_events(vec![
+            .add_attributes(vec![
                 ("action", "release_funds"),
-                ("escrow_amount", cfg.escrow_amount),
-                ("release_addr", escrow.source.to_string()),
-                ("airdrop_addr", airdrop_addr),
+                ("escrow_amount", &cfg.escrow_amount.to_string()),
+                ("release_addr", &escrow.source.to_string()),
+                ("airdrop_addr", &airdrop_addr.to_string()),
             ]);
         return Ok(res);
     }
@@ -188,15 +194,65 @@ pub fn execute_release_funds(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
+        QueryMsg::Escrow { airdrop_addr } => to_binary(&query_escrow(deps, airdrop_addr)?),
+        QueryMsg::ListEscrows { start_after, limit } => {
+            to_binary(&query_list_escrows(deps, start_after, limit)?)
+        }
     }
 }
 
 fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let cfg = CONFIG.load(deps.storage)?;
     Ok(ConfigResponse {
-        owner: cfg.admin,
+        admin: cfg.admin,
         escrow_amount: cfg.escrow_amount,
+        default_release_height: cfg.default_release_height,
+        release_addr: cfg.release_addr,
+        allowed_native: cfg.allowed_native,
     })
+}
+
+fn query_escrow(deps: Deps, airdrop_addr: String) -> StdResult<EscrowResponse> {
+    let addr = deps.api.addr_validate(&airdrop_addr)?;
+    let escrow = ESCROWS.load(deps.storage, &addr)?;
+
+    Ok(EscrowResponse {
+        source: escrow.source.to_string(),
+        expiration: escrow.expiration,
+        escrow_amount: escrow.escrow_amount,
+        latest_stage: escrow.latest_stage,
+        released: escrow.released,
+    })
+}
+
+// Settings for pagination
+const MAX_LIMIT: u32 = 30;
+const DEFAULT_LIMIT: u32 = 10;
+
+fn query_list_escrows(
+    deps: Deps,
+    start_after: Option<String>,
+    limit: Option<u32>,
+) -> StdResult<ListEscrowsResponse> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+    let start = start_after.map(|s| Bound::exclusive(s.as_bytes()));
+
+    let escrows = ESCROWS
+        .range(deps.storage, start, None, Order::Ascending)
+        .take(limit.into())
+        .collect::<StdResult<Vec<_>>>()?;
+    let escrows = escrows
+        .into_iter()
+        .map(|(_, e)| EscrowResponse {
+            source: e.source.to_string(),
+            expiration: e.expiration,
+            escrow_amount: e.escrow_amount,
+            latest_stage: e.latest_stage,
+            released: e.released,
+        })
+        .collect();
+
+    Ok(ListEscrowsResponse { escrows })
 }
 
 #[cfg(test)]
@@ -211,6 +267,7 @@ mod tests {
 
         let msg = InstantiateMsg {
             admin: None,
+            release_addr: None,
             escrow_amount: Default::default(),
             allowed_native: "".to_string(),
             default_release_height: Default::default(),
@@ -231,6 +288,7 @@ mod tests {
 
         let msg = InstantiateMsg {
             admin: None,
+            release_addr: None,
             escrow_amount: Default::default(),
             allowed_native: "".to_string(),
             default_release_height: Default::default(),

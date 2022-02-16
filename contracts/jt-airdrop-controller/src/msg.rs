@@ -1,5 +1,6 @@
 use cosmwasm_std::{Addr, Uint128, Uint64};
 use cw20::Cw20ReceiveMsg;
+use cw_utils::Expiration;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -32,11 +33,36 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     Config {},
+    Escrow {
+        airdrop_addr: String,
+    },
+    ListEscrows {
+        start_after: Option<String>,
+        limit: Option<u32>,
+    },
 }
 
-// We define a custom struct for each query response
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
-    pub owner: Addr,
+    pub admin: Addr,
+    /// ReleaseAddr is the address of the released unproven airdrops
+    pub release_addr: Addr,
     pub escrow_amount: Uint128,
+    /// release height is current_height + default_heighjt
+    pub default_release_height: Uint64,
+    pub allowed_native: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct EscrowResponse {
+    pub source: String,
+    pub expiration: Expiration,
+    pub escrow_amount: Uint128,
+    pub latest_stage: u8,
+    pub released: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+pub struct ListEscrowsResponse {
+    pub escrows: Vec<EscrowResponse>,
 }
