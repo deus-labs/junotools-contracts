@@ -312,7 +312,7 @@ fn query_list_escrows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    
     use cosmwasm_std::{Addr, Empty, Uint64, WasmMsg};
     use cw20::Cw20Coin;
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
@@ -419,7 +419,7 @@ mod tests {
             total_amount: None,
         };
 
-        let cosmos_msg: CosmosMsg<Empty> = CosmosMsg::from(WasmMsg::Execute {
+        let _cosmos_msg: CosmosMsg<Empty> = CosmosMsg::from(WasmMsg::Execute {
             contract_addr: cw20_airdrop_addr.clone().to_string(),
             msg: to_binary(&register_msg).unwrap(),
             funds: vec![],
@@ -455,7 +455,7 @@ mod tests {
 
         #[test]
         fn insufficient_amount() {
-            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+            let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
                 proper_instantiate();
 
             // cannot send without tokens
@@ -476,7 +476,7 @@ mod tests {
 
         #[test]
         fn happy_path() {
-            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+            let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
                 proper_instantiate();
 
             // cannot send without tokens
@@ -502,7 +502,7 @@ mod tests {
         // if expired dao can release
         #[test]
         fn dao_can_release() {
-            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+            let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
                 proper_instantiate();
 
             app.set_block(BlockInfo {
@@ -566,7 +566,7 @@ mod tests {
         // if stage increased user can release
         #[test]
         fn user_can_release() {
-            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+            let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
                 proper_instantiate();
 
             app.set_block(BlockInfo {
