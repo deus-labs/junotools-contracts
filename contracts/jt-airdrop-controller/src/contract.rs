@@ -312,7 +312,7 @@ fn query_list_escrows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use cosmwasm_std::{Addr, Empty, Uint64, WasmMsg};
     use cw20::Cw20Coin;
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
@@ -637,5 +637,47 @@ mod tests {
                 }
             )
         }
+    }
+
+    #[test]
+    fn update_config() {
+        let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+            proper_instantiate();
+
+        let msg = ExecuteMsg::UpdateConfig {
+            admin: Some("new_admin".to_string()),
+            release_addr: Some("new_release".to_string()),
+            escrow_amount: Some(Uint128::new(6)),
+            default_release_height: Some(Uint64::new(69)),
+            allowed_native: Some("unew".to_string()),
+        };
+
+        let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+            contract_addr: jt_controller_addr.clone(),
+            msg: to_binary(&msg).unwrap(),
+            funds: vec![],
+        });
+        // unauthorized
+        let err = app
+            .execute(Addr::unchecked(RANDOM), cosmos_msg.clone())
+            .unwrap_err();
+
+        assert!(matches!(
+            err.downcast().unwrap(),
+            ContractError::Unauthorized {}
+        ));
+
+        app.execute(Addr::unchecked(ADMIN), cosmos_msg).unwrap();
+
+        let res: ConfigResponse = app
+            .wrap()
+            .query_wasm_smart(jt_controller_addr, &QueryMsg::Config {})
+            .unwrap();
+
+        assert_eq!(res.admin, "new_admin");
+        assert_eq!(res.release_addr, "new_release");
+        assert_eq!(res.escrow_amount, Uint128::new(6));
+        assert_eq!(res.default_release_height, Uint64::new(69));
+        assert_eq!(res.allowed_native, "unew");
     }
 }
