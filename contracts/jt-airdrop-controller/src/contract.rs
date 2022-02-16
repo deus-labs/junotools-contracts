@@ -1,7 +1,7 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
+    to_binary, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
     QueryRequest, Response, StdResult, Uint128, Uint64, WasmQuery,
 };
 use cw2::set_contract_version;
@@ -549,7 +549,18 @@ mod tests {
                 .into_iter()
                 .find(|e| e.key == "release_addr")
                 .unwrap();
-            assert_eq!(event.value, RELEASE_ADDR)
+            assert_eq!(event.value, RELEASE_ADDR);
+            let balance = app
+                .wrap()
+                .query_balance(RELEASE_ADDR, NATIVE_DENOM)
+                .unwrap();
+            assert_eq!(
+                balance,
+                Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: ESCROW_AMOUNT.into()
+                }
+            )
         }
 
         // if stage increased user can release
@@ -616,7 +627,15 @@ mod tests {
                 .into_iter()
                 .find(|e| e.key == "release_addr")
                 .unwrap();
-            assert_eq!(event.value, USER)
+            assert_eq!(event.value, USER);
+            let balance = app.wrap().query_balance(USER, NATIVE_DENOM).unwrap();
+            assert_eq!(
+                balance,
+                Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: ESCROW_AMOUNT.into()
+                }
+            )
         }
     }
 }
