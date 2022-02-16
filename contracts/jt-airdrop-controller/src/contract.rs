@@ -525,20 +525,6 @@ mod tests {
             });
             app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
 
-            // register root
-            let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
-                merkle_root: MERKLE_ROOT.to_string(),
-                expiration: None,
-                start: None,
-                total_amount: None,
-            };
-            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
-                contract_addr: cw20_airdrop_addr.clone(),
-                msg: to_binary(&register_msg).unwrap(),
-                funds: vec![],
-            });
-            app.execute(Addr::unchecked(ADMIN), cosmos_msg).unwrap();
-
             app.set_block(BlockInfo {
                 height: 150,
                 time: Default::default(),
@@ -565,6 +551,72 @@ mod tests {
                 .unwrap();
             assert_eq!(event.value, RELEASE_ADDR)
         }
+
         // if stage increased user can release
+        #[test]
+        fn user_can_release() {
+            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+                proper_instantiate();
+
+            app.set_block(BlockInfo {
+                height: 1,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+
+            // cannot send without tokens
+            let msg = ExecuteMsg::LockFunds {
+                airdrop_addr: cw20_airdrop_addr.clone(),
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(ESCROW_AMOUNT),
+                }],
+            });
+            app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+
+            // register root
+            let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
+                merkle_root: MERKLE_ROOT.to_string(),
+                expiration: None,
+                start: None,
+                total_amount: None,
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: cw20_airdrop_addr.clone(),
+                msg: to_binary(&register_msg).unwrap(),
+                funds: vec![],
+            });
+            app.execute(Addr::unchecked(ADMIN), cosmos_msg).unwrap();
+
+            app.set_block(BlockInfo {
+                height: 5,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+
+            let msg = ExecuteMsg::ReleaseLockedFunds {
+                airdrop_addr: cw20_airdrop_addr.clone(),
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![],
+            });
+            let res = app.execute(Addr::unchecked(RANDOM), cosmos_msg).unwrap();
+            let event = res
+                .events
+                .into_iter()
+                .find(|e| e.ty == "wasm")
+                .unwrap()
+                .attributes
+                .into_iter()
+                .find(|e| e.key == "release_addr")
+                .unwrap();
+            assert_eq!(event.value, USER)
+        }
     }
 }
