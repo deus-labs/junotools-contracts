@@ -1,14 +1,14 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    to_binary, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
+    to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
     QueryRequest, Response, StdResult, Uint128, Uint64, WasmQuery,
 };
 use cw2::set_contract_version;
 
 use cw20_merkle_airdrop::msg::LatestStageResponse;
 use cw20_merkle_airdrop::msg::QueryMsg::LatestStage;
-use cw_storage_plus::Bound;
+use cw_storage_plus::{Bound, PrimaryKey};
 use cw_utils::{Expiration, NativeBalance};
 
 use crate::error::ContractError;
@@ -287,10 +287,12 @@ fn query_list_escrows(
     limit: Option<u32>,
 ) -> StdResult<ListEscrowsResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
-    let start = start_after.map(|s| Bound::exclusive(s.as_bytes()));
+
+    let start_after = start_after.and_then(|s| deps.api.addr_validate(&s).ok());
+    let start = start_after.map(|s| Bound::Exclusive(s.joined_key()));
 
     let escrows = ESCROWS
-        .range(deps.storage, start, None, Order::Ascending)
+        .range_raw(deps.storage, start, None, Order::Ascending)
         .take(limit.into())
         .collect::<StdResult<Vec<_>>>()?;
     let escrows = escrows
@@ -311,23 +313,169 @@ fn query_list_escrows(
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::Uint64;
+    use cosmwasm_std::{Addr, Empty, Uint64, WasmMsg};
+    use cw20::Cw20Coin;
+    use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
+
+    pub fn contract_jt_airdrop_controller() -> Box<dyn Contract<Empty>> {
+        let contract = ContractWrapper::new(
+            crate::contract::execute,
+            crate::contract::instantiate,
+            crate::contract::query,
+        );
+        Box::new(contract)
+    }
+
+    pub fn contract_cw20_merkle_airdrop() -> Box<dyn Contract<Empty>> {
+        let contract = ContractWrapper::new(
+            cw20_merkle_airdrop::contract::execute,
+            cw20_merkle_airdrop::contract::instantiate,
+            cw20_merkle_airdrop::contract::query,
+        );
+        Box::new(contract)
+    }
+
+    pub fn contract_cw20_base() -> Box<dyn Contract<Empty>> {
+        let contract = ContractWrapper::new(
+            cw20_base::contract::execute,
+            cw20_base::contract::instantiate,
+            cw20_base::contract::query,
+        );
+        Box::new(contract)
+    }
+
+    fn mock_app() -> App {
+        AppBuilder::new().build(|router, _, storage| {
+            router
+                .bank
+                .init_balance(
+                    storage,
+                    &Addr::unchecked(USER),
+                    vec![Coin {
+                        denom: NATIVE_DENOM.to_string(),
+                        amount: ESCROW_AMOUNT.into(),
+                    }],
+                )
+                .unwrap();
+        })
+    }
+
+    const ADMIN: &str = "ADMIN";
+    const USER: &str = "USER";
+    const RELEASE_ADDR: &str = "RELEASE_ADDR";
+    const NATIVE_DENOM: &str = "ujunox";
+    const ESCROW_AMOUNT: u128 = 100;
+    const DEFAULT_RELEASE: u64 = 10;
+
+    fn proper_instantiate() -> (App, String, String, String) {
+        let mut app = mock_app();
+        let cw20_merkle_id = app.store_code(contract_cw20_merkle_airdrop());
+        let cw20_base_id = app.store_code(contract_cw20_base());
+        let jt_airdrop_controller_id = app.store_code(contract_jt_airdrop_controller());
+
+        let msg = cw20_base::msg::InstantiateMsg {
+            name: "TEST".to_string(),
+            symbol: "TEST".to_string(),
+            decimals: 3,
+            initial_balances: vec![Cw20Coin {
+                address: USER.to_string(),
+                amount: Uint128::new(1000000),
+            }],
+            mint: None,
+            marketing: None,
+        };
+        let cw20_base_addr = app
+            .instantiate_contract(
+                cw20_base_id,
+                Addr::unchecked(ADMIN),
+                &msg,
+                &[],
+                "test",
+                None,
+            )
+            .unwrap();
+
+        let merkle_root = "b45c1ea28b26adb13e412933c9e055b01fdf7585304b00cd8f1cb220aa6c5e88";
+        let msg = cw20_merkle_airdrop::msg::InstantiateMsg {
+            owner: Some(ADMIN.to_string()),
+            cw20_token_address: cw20_base_addr.to_string(),
+        };
+        let cw20_airdrop_addr = app
+            .instantiate_contract(
+                cw20_merkle_id,
+                Addr::unchecked(ADMIN),
+                &msg,
+                &[],
+                "test",
+                None,
+            )
+            .unwrap();
+
+        let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
+            merkle_root: merkle_root.to_string(),
+            expiration: None,
+            start: None,
+            total_amount: None,
+        };
+
+        let cosmos_msg: CosmosMsg<Empty> = CosmosMsg::from(WasmMsg::Execute {
+            contract_addr: cw20_airdrop_addr.clone().to_string(),
+            msg: to_binary(&register_msg).unwrap(),
+            funds: vec![],
+        });
+
+        let msg = InstantiateMsg {
+            admin: Some(ADMIN.to_string()),
+            release_addr: Some(RELEASE_ADDR.to_string()),
+            escrow_amount: Uint128::new(ESCROW_AMOUNT),
+            allowed_native: NATIVE_DENOM.to_string(),
+            default_release_height: Uint64::new(DEFAULT_RELEASE),
+        };
+        let jt_controller_addr = app
+            .instantiate_contract(
+                jt_airdrop_controller_id,
+                Addr::unchecked(ADMIN),
+                &msg,
+                &[],
+                "test",
+                None,
+            )
+            .unwrap();
+        (
+            app,
+            cw20_base_addr.to_string(),
+            cw20_airdrop_addr.to_string(),
+            jt_controller_addr.to_string(),
+        )
+    }
 
     #[test]
     fn lock_funds() {
-        let mut deps = mock_dependencies();
-        let admin = "admin";
-        let release_addr = "release_addr";
+        let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) = proper_instantiate();
 
-        let msg = InstantiateMsg {
-            admin: Some(admin.to_string()),
-            release_addr: Some(release_addr.to_string()),
-            escrow_amount: Uint128::new(100),
-            allowed_native: "ujunox".to_string(),
-            default_release_height: Uint64::new(30),
+        // cannot send without tokens
+        let msg = ExecuteMsg::LockFunds {
+            airdrop_addr: cw20_airdrop_addr,
         };
+        let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+            contract_addr: jt_controller_addr.clone(),
+            msg: to_binary(&msg).unwrap(),
+            funds: vec![],
+        });
+        let err = app.execute(Addr::unchecked(USER), cosmos_msg).unwrap_err();
+        assert!(matches!(
+            err.downcast().unwrap(),
+            ContractError::InsufficientAmount {}
+        ));
 
-        let info = mock_info("creator", &[]);
-        let _res = instantiate(deps.as_mut(), mock_env(), info, msg).unwrap();
+        let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+            contract_addr: jt_controller_addr,
+            msg: to_binary(&msg).unwrap(),
+            funds: vec![Coin {
+                denom: NATIVE_DENOM.to_string(),
+                amount: Uint128::new(ESCROW_AMOUNT),
+            }],
+        });
+        app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
     }
 }
