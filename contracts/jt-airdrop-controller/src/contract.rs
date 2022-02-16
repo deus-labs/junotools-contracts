@@ -1,20 +1,18 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
 use cosmwasm_std::{
-    from_binary, to_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env,
-    MessageInfo, Order, QueryRequest, Response, StdResult, Uint128, Uint64, WasmQuery,
+    to_binary, BankMsg, Binary, Coin, CosmosMsg, Deps, DepsMut, Env, MessageInfo, Order,
+    QueryRequest, Response, StdResult, Uint128, Uint64, WasmQuery,
 };
 use cw2::set_contract_version;
-use cw20::Balance::Native;
-use cw20::{Balance, Cw20CoinVerified, Cw20ReceiveMsg};
+
 use cw20_merkle_airdrop::msg::LatestStageResponse;
 use cw20_merkle_airdrop::msg::QueryMsg::LatestStage;
 use cw_storage_plus::Bound;
 use cw_utils::{Expiration, NativeBalance};
-use std::ops::Add;
 
 use crate::error::ContractError;
-use crate::msg::QueryMsg::ListEscrows;
+
 use crate::msg::{
     ConfigResponse, EscrowResponse, ExecuteMsg, InstantiateMsg, ListEscrowsResponse, QueryMsg,
 };
@@ -312,10 +310,8 @@ fn query_list_escrows(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cosmwasm_std::testing::{
-        mock_dependencies, mock_dependencies_with_balance, mock_env, mock_info,
-    };
-    use cosmwasm_std::{coins, from_binary, Uint64};
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::Uint64;
 
     #[test]
     fn lock_funds() {
