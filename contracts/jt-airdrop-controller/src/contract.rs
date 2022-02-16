@@ -641,7 +641,7 @@ mod tests {
 
     #[test]
     fn update_config() {
-        let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+        let (mut app, _cw20_base_addr, _cw20_airdrop_addr, jt_controller_addr) =
             proper_instantiate();
 
         let msg = ExecuteMsg::UpdateConfig {
