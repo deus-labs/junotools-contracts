@@ -155,6 +155,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cw-utils"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef842a1792e4285beff7b3b518705f760fa4111dc1e296e53f3e92d1ef7f6220"
+dependencies = [
+ "cosmwasm-std",
+ "schemars",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "cw2"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -164,6 +176,35 @@ dependencies = [
  "cw-storage-plus",
  "schemars",
  "serde",
+]
+
+[[package]]
+name = "cw20"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9671d7edef5608acaf5b2f1e473ee3f501eced2cd4f7392e2106c8cf02ba0720"
+dependencies = [
+ "cosmwasm-std",
+ "cw-utils",
+ "schemars",
+ "serde",
+]
+
+[[package]]
+name = "cw20-merkle-airdrop"
+version = "0.11.1"
+source = "git+https://github.com/CosmWasm/cw-tokens#4ca9307f10b94f545427963c78bf10a0ef9c7641"
+dependencies = [
+ "cosmwasm-std",
+ "cw-storage-plus",
+ "cw-utils",
+ "cw2",
+ "cw20",
+ "hex",
+ "schemars",
+ "serde",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]
@@ -315,7 +356,10 @@ dependencies = [
  "cosmwasm-std",
  "cosmwasm-storage",
  "cw-storage-plus",
+ "cw-utils",
  "cw2",
+ "cw20",
+ "cw20-merkle-airdrop",
  "schemars",
  "serde",
  "thiserror",
