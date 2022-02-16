@@ -362,10 +362,12 @@ mod tests {
 
     const ADMIN: &str = "ADMIN";
     const USER: &str = "USER";
+    const RANDOM: &str = "RANDOM";
     const RELEASE_ADDR: &str = "RELEASE_ADDR";
     const NATIVE_DENOM: &str = "ujunox";
     const ESCROW_AMOUNT: u128 = 100;
     const DEFAULT_RELEASE: u64 = 10;
+    const MERKLE_ROOT: &str = "b45c1ea28b26adb13e412933c9e055b01fdf7585304b00cd8f1cb220aa6c5e88";
 
     fn proper_instantiate() -> (App, String, String, String) {
         let mut app = mock_app();
@@ -395,7 +397,6 @@ mod tests {
             )
             .unwrap();
 
-        let merkle_root = "b45c1ea28b26adb13e412933c9e055b01fdf7585304b00cd8f1cb220aa6c5e88";
         let msg = cw20_merkle_airdrop::msg::InstantiateMsg {
             owner: Some(ADMIN.to_string()),
             cw20_token_address: cw20_base_addr.to_string(),
@@ -412,7 +413,7 @@ mod tests {
             .unwrap();
 
         let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
-            merkle_root: merkle_root.to_string(),
+            merkle_root: MERKLE_ROOT.to_string(),
             expiration: None,
             start: None,
             total_amount: None,
@@ -449,33 +450,121 @@ mod tests {
         )
     }
 
-    #[test]
-    fn lock_funds() {
-        let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) = proper_instantiate();
+    mod lock_funds {
+        use super::*;
 
-        // cannot send without tokens
-        let msg = ExecuteMsg::LockFunds {
-            airdrop_addr: cw20_airdrop_addr,
-        };
-        let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
-            contract_addr: jt_controller_addr.clone(),
-            msg: to_binary(&msg).unwrap(),
-            funds: vec![],
-        });
-        let err = app.execute(Addr::unchecked(USER), cosmos_msg).unwrap_err();
-        assert!(matches!(
-            err.downcast().unwrap(),
-            ContractError::InsufficientAmount {}
-        ));
+        #[test]
+        fn insufficient_amount() {
+            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+                proper_instantiate();
 
-        let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
-            contract_addr: jt_controller_addr,
-            msg: to_binary(&msg).unwrap(),
-            funds: vec![Coin {
-                denom: NATIVE_DENOM.to_string(),
-                amount: Uint128::new(ESCROW_AMOUNT),
-            }],
-        });
-        app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+            // cannot send without tokens
+            let msg = ExecuteMsg::LockFunds {
+                airdrop_addr: cw20_airdrop_addr,
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![],
+            });
+            let err = app.execute(Addr::unchecked(USER), cosmos_msg).unwrap_err();
+            assert!(matches!(
+                err.downcast().unwrap(),
+                ContractError::InsufficientAmount {}
+            ));
+        }
+
+        #[test]
+        fn happy_path() {
+            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+                proper_instantiate();
+
+            // cannot send without tokens
+            let msg = ExecuteMsg::LockFunds {
+                airdrop_addr: cw20_airdrop_addr,
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr,
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(ESCROW_AMOUNT),
+                }],
+            });
+            app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+        }
+    }
+
+    mod release_funds {
+        use super::*;
+        use cosmwasm_std::BlockInfo;
+
+        // if expired dao can release
+        #[test]
+        fn dao_can_release() {
+            let (mut app, cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
+                proper_instantiate();
+
+            app.set_block(BlockInfo {
+                height: 1,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+
+            // cannot send without tokens
+            let msg = ExecuteMsg::LockFunds {
+                airdrop_addr: cw20_airdrop_addr.clone(),
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(ESCROW_AMOUNT),
+                }],
+            });
+            app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+
+            // register root
+            let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
+                merkle_root: MERKLE_ROOT.to_string(),
+                expiration: None,
+                start: None,
+                total_amount: None,
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: cw20_airdrop_addr.clone(),
+                msg: to_binary(&register_msg).unwrap(),
+                funds: vec![],
+            });
+            app.execute(Addr::unchecked(ADMIN), cosmos_msg).unwrap();
+
+            app.set_block(BlockInfo {
+                height: 150,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+
+            let msg = ExecuteMsg::ReleaseLockedFunds {
+                airdrop_addr: cw20_airdrop_addr.clone(),
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![],
+            });
+            let res = app.execute(Addr::unchecked(RANDOM), cosmos_msg).unwrap();
+            let event = res
+                .events
+                .into_iter()
+                .find(|e| e.ty == "wasm")
+                .unwrap()
+                .attributes
+                .into_iter()
+                .find(|e| e.key == "release_addr")
+                .unwrap();
+            assert_eq!(event.value, RELEASE_ADDR)
+        }
+        // if stage increased user can release
     }
 }
