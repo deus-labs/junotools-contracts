@@ -8,7 +8,7 @@ use cw2::set_contract_version;
 
 use cw20_merkle_airdrop::msg::LatestStageResponse;
 use cw20_merkle_airdrop::msg::QueryMsg::LatestStage;
-use cw_storage_plus::{Bound, PrimaryKey};
+use cw_storage_plus::Bound;
 use cw_utils::{Expiration, NativeBalance};
 
 use crate::error::ContractError;
@@ -288,11 +288,10 @@ fn query_list_escrows(
 ) -> StdResult<ListEscrowsResponse> {
     let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
 
-    let start_after = start_after.and_then(|s| deps.api.addr_validate(&s).ok());
-    let start = start_after.map(|s| Bound::Exclusive(s.joined_key()));
+    let start = start_after.map(|s| Bound::ExclusiveRaw(s.into()));
 
     let escrows = ESCROWS
-        .range_raw(deps.storage, start, None, Order::Ascending)
+        .range(deps.storage, start, None, Order::Ascending)
         .take(limit.into())
         .collect::<StdResult<Vec<_>>>()?;
     let escrows = escrows
@@ -314,7 +313,6 @@ mod tests {
     use super::*;
 
     use cosmwasm_std::{Addr, Empty, Uint64, WasmMsg};
-    use cw20::Cw20Coin;
     use cw_multi_test::{App, AppBuilder, Contract, ContractWrapper, Executor};
 
     pub fn contract_jt_airdrop_controller() -> Box<dyn Contract<Empty>> {
@@ -379,7 +377,7 @@ mod tests {
             name: "TEST".to_string(),
             symbol: "TEST".to_string(),
             decimals: 3,
-            initial_balances: vec![Cw20Coin {
+            initial_balances: vec![cw20::Cw20Coin {
                 address: USER.to_string(),
                 amount: Uint128::new(1000000),
             }],

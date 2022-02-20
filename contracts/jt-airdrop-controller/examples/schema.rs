@@ -3,7 +3,9 @@ use std::fs::create_dir_all;
 
 use cosmwasm_schema::{export_schema, remove_schemas, schema_for};
 
-use jt_airdrop_controller::msg::{ExecuteMsg, InstantiateMsg, QueryMsg, ConfigResponse, EscrowResponse, ListEscrowsResponse};
+use jt_airdrop_controller::msg::{
+    ConfigResponse, EscrowResponse, ExecuteMsg, InstantiateMsg, ListEscrowsResponse, QueryMsg,
+};
 use jt_airdrop_controller::state::{Config, Escrow};
 
 fn main() {
