@@ -11,7 +11,8 @@ pub struct InstantiateMsg {
     pub release_addr: Option<String>,
     pub escrow_amount: Uint128,
     pub allowed_native: String,
-    pub default_release_height: Uint64,
+    /// release_height_delta gets added to the current block height
+    pub release_height_delta: Uint64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -21,11 +22,12 @@ pub enum ExecuteMsg {
         admin: Option<String>,
         release_addr: Option<String>,
         escrow_amount: Option<Uint128>,
-        default_release_height: Option<Uint64>,
+        release_height_delta: Option<Uint64>,
         allowed_native: Option<String>,
     },
     ReleaseLockedFunds {
         airdrop_addr: String,
+        stage: u8,
     },
     LockFunds {
         airdrop_addr: String,
@@ -38,6 +40,7 @@ pub enum QueryMsg {
     Config {},
     Escrow {
         airdrop_addr: String,
+        stage: u8,
     },
     ListEscrows {
         start_after: Option<String>,
@@ -52,7 +55,7 @@ pub struct ConfigResponse {
     pub release_addr: Addr,
     pub escrow_amount: Uint128,
     /// release height is current_height + default_heighjt
-    pub default_release_height: Uint64,
+    pub release_height_delta: Uint64,
     pub allowed_native: String,
 }
 

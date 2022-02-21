@@ -11,8 +11,8 @@ pub struct Config {
     /// ReleaseAddr is the address of the released unproven airdrops
     pub release_addr: Addr,
     pub escrow_amount: Uint128,
-    /// release height is current_height + default_heighjt
-    pub default_release_height: Uint64,
+    /// release_height_delta gets added to the current block height
+    pub release_height_delta: Uint64,
     pub allowed_native: String,
 }
 
@@ -28,4 +28,5 @@ pub struct Escrow {
     pub released: bool,
 }
 
-pub const ESCROWS: Map<&Addr, Escrow> = Map::new("escrow");
+/// ESCROWS: index (airdrop_addr, stage) -> Escrow
+pub const ESCROWS: Map<(&Addr, u8), Escrow> = Map::new("escrow");

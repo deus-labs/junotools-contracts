@@ -42,7 +42,7 @@ pub fn instantiate(
         admin: admin.clone(),
         release_addr: release_addr.clone(),
         escrow_amount: msg.escrow_amount,
-        default_release_height: msg.default_release_height,
+        release_height_delta: msg.release_height_delta,
         allowed_native: msg.allowed_native,
     };
 
@@ -68,7 +68,7 @@ pub fn execute(
             admin,
             release_addr,
             escrow_amount,
-            default_release_height,
+            release_height_delta: default_release_height,
             allowed_native,
         } => execute_update_config(
             deps,
@@ -80,9 +80,10 @@ pub fn execute(
             default_release_height,
             allowed_native,
         ),
-        ExecuteMsg::ReleaseLockedFunds { airdrop_addr } => {
-            execute_release_funds(deps, info, env, airdrop_addr)
-        }
+        ExecuteMsg::ReleaseLockedFunds {
+            airdrop_addr,
+            stage,
+        } => execute_release_funds(deps, info, env, airdrop_addr, stage),
         ExecuteMsg::LockFunds { airdrop_addr } => execute_lock_funds(deps, info, env, airdrop_addr),
     }
 }
@@ -113,7 +114,7 @@ pub fn execute_update_config(
         cfg.escrow_amount = escrow_amount;
     }
     if let Some(default_release_height) = default_release_height {
-        cfg.default_release_height = default_release_height;
+        cfg.release_height_delta = default_release_height;
     }
     if let Some(allowed_native) = allowed_native {
         cfg.allowed_native = allowed_native;
@@ -147,15 +148,26 @@ pub fn execute_lock_funds(
         msg: to_binary(&query_msg)?,
     });
     let res: LatestStageResponse = deps.querier.query(&req)?;
+    let stage = res.latest_stage;
+
+    if ESCROWS
+        .may_load(deps.storage, (&airdrop_addr, stage))?
+        .is_some()
+    {
+        return Err(ContractError::EscrowAlreadyCreated {
+            stage: res.latest_stage,
+        });
+    }
+
     let escrow = Escrow {
         source: info.sender.clone(),
-        expiration: Expiration::AtHeight(cfg.default_release_height.u64() + env.block.height),
+        expiration: Expiration::AtHeight(cfg.release_height_delta.u64() + env.block.height),
         escrow_amount: cfg.escrow_amount,
         latest_stage: res.latest_stage,
         released: false,
     };
 
-    ESCROWS.save(deps.storage, &airdrop_addr, &escrow)?;
+    ESCROWS.save(deps.storage, (&airdrop_addr, stage), &escrow)?;
 
     let res = Response::new().add_attributes(vec![
         ("action", "lock_funds"),
@@ -172,11 +184,12 @@ pub fn execute_release_funds(
     _info: MessageInfo,
     env: Env,
     airdrop_addr: String,
+    stage: u8,
 ) -> Result<Response, ContractError> {
     let cfg = CONFIG.load(deps.storage)?;
 
     let airdrop_addr = deps.api.addr_validate(&airdrop_addr)?;
-    let mut escrow = ESCROWS.load(deps.storage, &airdrop_addr)?;
+    let mut escrow = ESCROWS.load(deps.storage, (&airdrop_addr, stage))?;
     if escrow.released {
         return Err(ContractError::EscrowAlreadyReleased {});
     }
@@ -185,7 +198,7 @@ pub fn execute_release_funds(
     if escrow.expiration.is_expired(&env.block) {
         // update escrow
         escrow.released = true;
-        ESCROWS.save(deps.storage, &airdrop_addr, &escrow)?;
+        ESCROWS.save(deps.storage, (&airdrop_addr, stage), &escrow)?;
 
         let send_fund_msg = BankMsg::Send {
             to_address: cfg.release_addr.to_string(),
@@ -226,7 +239,7 @@ pub fn execute_release_funds(
 
         // update escrow
         escrow.released = true;
-        ESCROWS.save(deps.storage, &airdrop_addr, &escrow)?;
+        ESCROWS.save(deps.storage, (&airdrop_addr, stage), &escrow)?;
 
         let res = Response::new()
             .add_message(CosmosMsg::from(send_fund_msg))
@@ -246,7 +259,10 @@ pub fn execute_release_funds(
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
-        QueryMsg::Escrow { airdrop_addr } => to_binary(&query_escrow(deps, airdrop_addr)?),
+        QueryMsg::Escrow {
+            airdrop_addr,
+            stage,
+        } => to_binary(&query_escrow(deps, airdrop_addr, stage)?),
         QueryMsg::ListEscrows { start_after, limit } => {
             to_binary(&query_list_escrows(deps, start_after, limit)?)
         }
@@ -258,15 +274,15 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         admin: cfg.admin,
         escrow_amount: cfg.escrow_amount,
-        default_release_height: cfg.default_release_height,
+        release_height_delta: cfg.release_height_delta,
         release_addr: cfg.release_addr,
         allowed_native: cfg.allowed_native,
     })
 }
 
-fn query_escrow(deps: Deps, airdrop_addr: String) -> StdResult<EscrowResponse> {
+fn query_escrow(deps: Deps, airdrop_addr: String, stage: u8) -> StdResult<EscrowResponse> {
     let addr = deps.api.addr_validate(&airdrop_addr)?;
-    let escrow = ESCROWS.load(deps.storage, &addr)?;
+    let escrow = ESCROWS.load(deps.storage, (&addr, stage))?;
 
     Ok(EscrowResponse {
         source: escrow.source.to_string(),
@@ -428,7 +444,7 @@ mod tests {
             release_addr: Some(RELEASE_ADDR.to_string()),
             escrow_amount: Uint128::new(ESCROW_AMOUNT),
             allowed_native: NATIVE_DENOM.to_string(),
-            default_release_height: Uint64::new(DEFAULT_RELEASE),
+            release_height_delta: Uint64::new(DEFAULT_RELEASE),
         };
         let jt_controller_addr = app
             .instantiate_contract(
@@ -531,6 +547,7 @@ mod tests {
 
             let msg = ExecuteMsg::ReleaseLockedFunds {
                 airdrop_addr: cw20_airdrop_addr.clone(),
+                stage: 0,
             };
             let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
                 contract_addr: jt_controller_addr.clone(),
@@ -609,6 +626,7 @@ mod tests {
 
             let msg = ExecuteMsg::ReleaseLockedFunds {
                 airdrop_addr: cw20_airdrop_addr.clone(),
+                stage: 0,
             };
             let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
                 contract_addr: jt_controller_addr.clone(),
@@ -646,7 +664,7 @@ mod tests {
             admin: Some("new_admin".to_string()),
             release_addr: Some("new_release".to_string()),
             escrow_amount: Some(Uint128::new(6)),
-            default_release_height: Some(Uint64::new(69)),
+            release_height_delta: Some(Uint64::new(69)),
             allowed_native: Some("unew".to_string()),
         };
 
@@ -675,7 +693,7 @@ mod tests {
         assert_eq!(res.admin, "new_admin");
         assert_eq!(res.release_addr, "new_release");
         assert_eq!(res.escrow_amount, Uint128::new(6));
-        assert_eq!(res.default_release_height, Uint64::new(69));
+        assert_eq!(res.release_height_delta, Uint64::new(69));
         assert_eq!(res.allowed_native, "unew");
     }
 }

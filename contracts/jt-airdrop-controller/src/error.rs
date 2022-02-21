@@ -15,6 +15,9 @@ pub enum ContractError {
     #[error("Insufficient amount sent")]
     InsufficientAmount {},
 
+    #[error("Escrow already created for stage {stage}")]
+    EscrowAlreadyCreated { stage: u8 },
+
     #[error("Escrow already released")]
     EscrowAlreadyReleased {},
 
