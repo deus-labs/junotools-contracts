@@ -31,7 +31,7 @@ cw-storage-plus = "0.12.1"
 cw2 = "0.12.1"
 cw20 = { version = "0.12.1" }
 cw-utils = { version = "0.12.1" }
-cw20-merkle-airdrop = { branch = "upgrade-0.12", git = "https://github.com/CosmWasm/cw-tokens", features = ["library"]}
+cw20-merkle-airdrop = { branch = "main", git = "https://github.com/CosmWasm/cw-tokens", features = ["library"] }
 schemars = "0.8"
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 thiserror = { version = "1.0" }
@@ -41,4 +41,4 @@ anyhow = "1"
 cosmwasm-schema = { version = "1.0.0-beta5" }
 cw-multi-test = "0.12.1"
 cw20-base = { version = "0.12.1", features = ["library"] }
-cw20-merkle-airdrop = { branch = "upgrade-0.12", git = "https://github.com/CosmWasm/cw-tokens"}
+cw20-merkle-airdrop = { branch = "main", git = "https://github.com/CosmWasm/cw-tokens"}
