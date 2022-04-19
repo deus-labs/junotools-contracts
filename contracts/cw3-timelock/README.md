@@ -1,6 +1,17 @@
 
 # CW3-Timelock
-A smart contract that relays execute function calls on other smart contracts with a predetermined minimum time delay.
+Timelock is a smart contract designed to relay execute-function calls on other smart contracts with a predetermined minimum time delay. Though it's not strictly a MultiSig/Voting Contract, Timelock follows the footsteps of CW3-spec compliant contracts in the sense that no address can immediately execute, but only propose/schedule an arbitrary operation, before a delayed, final execution can occur.
+
+Instantiating the Timelock contract involves setting up a minimum, contract-wide, default time delay, as well as specifying the addresses to act as Administrators and Proposers.
+
+The designated minimum time delay for the Timelock contract ensures that operations can only be scheduled by the proposers if their execution time is further in the future than the amount of this delay.
+
+The administrators are responsible for the initial configuration of the Timelock contract, as well as testing its compatibility with the potential target contracts. If the administrator list is left empty, by default, the address by which the Timelock contract is instantiated will be set as an administrator, along with the Timelock contract itself. Once the list of proposers and the minimum time delay of the contract is determined (upon instantiation or later on, by one of the administrators), the administrator rights are expected to be renounced for the Timelock contract to become and remain self-governed. From this point on, every action would need to pass through the Timelock delay mechanism before they can be executed.
+
+The proposers are in charge of scheduling operations. Before scheduling an operation, proposers need to make sure that the Timelock contract has the necessary rights on the target contract in order to successfully execute the action that is embedded in the scheduled operation. While scheduling an operation, proposers can specify a list of addresses that are in charge of executing the scheduled operation and triggering the embedded execute-function call on the target contract as a final step. If the list of executors is left empty, any address can execute the scheduled operation after the execution time by default.
+
+It is important to note that the Timelock only aims to delay (and not guarantee or group-evaluate the content of) administrative actions on target contracts. Once a Timelock contract becomes self-governed, a scheduled operation can be, and only be cancelled by the original proposer address (immediately) or by means of scheduling another operation going through the Timelock mechanism (granted the execution time of the operation to be cancelled allows for it). Therefore, the list of proposers should be carefully contemplated upon before setting up a self-governed Timelock contract.
+
 
 ## Instantiate
 ```rust
