@@ -6,11 +6,11 @@ Instantiating the Timelock contract involves setting up a minimum, contract-wide
 
 The designated minimum time delay for the Timelock contract ensures that operations can only be scheduled by the proposers if their execution time is further in the future than the amount of this delay.
 
-The administrators are responsible for the initial configuration of the Timelock contract, as well as testing its compatibility with the potential target contracts. If the administrator list is left empty, by default, the address by which the Timelock contract is instantiated will be set as an administrator, along with the Timelock contract itself. Once the list of proposers and the minimum time delay of the contract is determined (upon instantiation or later on, by one of the administrators), the administrator rights are expected to be renounced for the Timelock contract to become and remain self-governed. From this point on, every action would need to pass through the Timelock delay mechanism before they can be executed.
+The administrators are responsible for the initial configuration of the Timelock contract, as well as testing its compatibility with potential target contracts. If the administrator list is left empty, by default, the address by which the Timelock contract is instantiated will be set as an administrator. Once the list of proposers and the minimum time delay of the contract is agreed upon and finalized (upon instantiation or later on by the administrators), the administrators are expected to freeze the Timelock contract to ascertain that no future alterations can be made on the final configuration. Freezing the Timelock contract is irrevocable and may potentially render the contract practically unusable.
 
-The proposers are in charge of scheduling operations. A Timelock contract should have the necessary rights on target contracts for scheduled operations to be executed successfully. While scheduling an operation, proposers can specify a list of addresses that are in charge of executing the scheduled operation and triggering the embedded execute-function call on the target contract as a final step. If the list of executors is left empty, any address can execute the scheduled operation after the execution time by default.
+The proposers are in charge of scheduling operations that will pass through the Timelock delay mechanism. A Timelock contract should have the necessary rights on target contracts for scheduled operations to be executed successfully. While scheduling an operation, proposers can specify a list of executor addresses that will be in charge of executing the scheduled operation once the execution time for that particular operation is reached. Executing operations trigger the embedded execute-function call on the target contract as a final step. If the list of executors is left empty, any address can execute the scheduled operation after the execution time by default.
 
-It is important to note that while the Timelock contract is designed to delay execute-function calls, scheduling operations does not guarantee their execution on target contracts per se. Once a Timelock contract becomes self-governed, a scheduled operation can still be cancelled by the original proposer address (immediately) or by means of scheduling another operation targeting the Timelock contract itself (granted the execution time of the operation to be cancelled allows for it). Therefore, the list of proposers should be carefully contemplated upon before setting up a self-governed Timelock contract.
+It is important to note that while the Timelock contract is designed to delay execute-function calls, scheduling operations does not guarantee their execution on target contracts per se, considering the fact that a scheduled operation can still be cancelled by the original proposer address before its execution. Therefore, the list of proposers should be carefully contemplated upon before setting up a Timelock contract and freezing its configuration variables.
 
 ## Instantiate
 ```rust
@@ -55,6 +55,8 @@ pub enum ExecuteMsg {
   UpdateMinDelay {
     new_delay: Duration,
   },
+
+  Freeze {},
 }
 ```
 
