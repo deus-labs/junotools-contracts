@@ -406,10 +406,10 @@ mod tests {
         })
     }
 
-    const ADMIN: &str = "ADMIN";
-    const USER: &str = "USER";
-    const RANDOM: &str = "RANDOM";
-    const RELEASE_ADDR: &str = "RELEASE_ADDR";
+    const ADMIN: &str = "juno1xxfvvf6gukus6paasyjfhgmzmmdc25q6ww6hez";
+    const USER: &str = "juno1mg83cpata7hz33cuw3v0z4l0zrtlchnqv3zgfl";
+    const RANDOM: &str = "juno1hfx3mlyy30450u8fe5enyywtl3e2wnkhuy44qg";
+    const RELEASE_ADDR: &str = "juno19ayrkzcfpgw8ht7cugmcmm4ca96zwp5auect33";
     const NATIVE_DENOM: &str = "ujunox";
     const ESCROW_AMOUNT: u128 = 100;
     const DEFAULT_RELEASE: u64 = 10;
@@ -727,5 +727,57 @@ mod tests {
         assert_eq!(res.escrow_amount, Uint128::new(6));
         assert_eq!(res.release_height_delta, Uint64::new(69));
         assert_eq!(res.allowed_native, "unew");
+    }
+
+    mod queries {
+        use super::*;
+        use cosmwasm_std::BlockInfo;
+
+        #[test]
+        fn query_expired_escrows() {
+            let (mut app, _cw20_base_addr, _cw20_airdrop_addr, jt_controller_addr) =
+                proper_instantiate();
+    
+            app.set_block(BlockInfo {
+                height: 1,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+    
+            // cannot send without tokens
+            let msg = ExecuteMsg::LockFunds {
+                airdrop_addr: _cw20_airdrop_addr.clone(),
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(ESCROW_AMOUNT),
+                }],
+            });
+            app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+    
+            let msg = QueryMsg::ListExpiredEscrows { start_after: None, limit: None };
+            let res: ListEscrowsResponse = app
+            .wrap()
+            .query_wasm_smart(&jt_controller_addr, &msg)
+            .unwrap();
+            assert_eq!(res.escrows.len(), 0);
+
+            app.set_block(BlockInfo {
+                height: 150,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+
+            let msg = QueryMsg::ListExpiredEscrows { start_after: None, limit: None };
+            let res: ListEscrowsResponse = app
+            .wrap()
+            .query_wasm_smart(jt_controller_addr, &msg)
+            .unwrap();
+            assert_eq!(res.escrows.len(), 1);
+            assert_eq!(res.escrows[0].released, false);
+        }
     }
 }
