@@ -21,7 +21,7 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    env: Env,
+    _env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
@@ -36,7 +36,6 @@ pub fn instantiate(
             }
         }
     }
-    admins.push(env.contract.address);
 
     let mut proposers = vec![];
     for proposer in msg.proposers{
@@ -47,6 +46,7 @@ pub fn instantiate(
         min_time_delay: msg.min_delay,
         proposers,
         admins,
+        frozen: false,
     };
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
     OPERATION_SEQ.save(deps.storage, &Uint64::zero())?;
@@ -102,6 +102,7 @@ pub fn execute(
             execute_remove_proposer(deps, _env, info, proposer_address)
         }
         ExecuteMsg::UpdateMinDelay { new_delay } => execute_update_min_delay(deps, _env, info, new_delay),
+        ExecuteMsg::Freeze {} => execute_freeze(deps, _env, info),
     }
 }
 
@@ -174,11 +175,10 @@ pub fn execute_execute(
 ) -> Result<Response, ContractError> {
     let mut operation = OPERATION_LIST.load(deps.storage, operation_id.u64())?;
 
-    //is delay ended
     if !operation.execution_time.is_triggered(&env.block) {
         return Err(ContractError::Unexpired {});
     }
-    //has executer list if so sender is in it
+
     if operation.executors.is_some()
         && !operation
             .executors
@@ -218,10 +218,7 @@ pub fn execute_cancel(
         return Err(ContractError::NotDeletable {});
     }
 
-    let timelock = CONFIG.load(deps.storage)?;
-
-    //is admin
-    if !timelock.admins.contains(&info.sender) && operation.proposer != info.sender {
+    if operation.proposer != info.sender {
         return Err(ContractError::Unauthorized {});
     }
 
@@ -241,6 +238,10 @@ pub fn execute_revoke_admin(
     admin_address: String,
 ) -> Result<Response, ContractError> {
     let mut timelock = CONFIG.load(deps.storage)?;
+
+    if timelock.frozen {
+        return Err(ContractError::TimelockFrozen {});
+    }
 
     if !timelock.admins.contains(&info.sender) {
         return Err(ContractError::Unauthorized {});
@@ -271,7 +272,10 @@ pub fn execute_add_proposer(
 ) -> Result<Response, ContractError> {
     let mut timelock = CONFIG.load(deps.storage)?;
 
-    //is admin
+    if timelock.frozen {
+        return Err(ContractError::TimelockFrozen {});
+    }
+
     if !timelock.admins.contains(&info.sender) {
         return Err(ContractError::Unauthorized {});
     }
@@ -300,7 +304,10 @@ pub fn execute_remove_proposer(
 ) -> Result<Response, ContractError> {
     let mut timelock = CONFIG.load(deps.storage)?;
 
-    //is admin
+    if timelock.frozen {
+        return Err(ContractError::TimelockFrozen {});
+    }
+
     if !timelock.admins.contains(&info.sender) {
         return Err(ContractError::Unauthorized {});
     }
@@ -330,7 +337,10 @@ pub fn execute_update_min_delay(
 ) -> Result<Response, ContractError> {
     let mut timelock = CONFIG.load(deps.storage)?;
 
-    //is admin
+    if timelock.frozen {
+        return Err(ContractError::TimelockFrozen {});
+    }
+
     if !timelock.admins.contains(&info.sender) {
         return Err(ContractError::Unauthorized {});
     }
@@ -342,6 +352,31 @@ pub fn execute_update_min_delay(
         .add_attribute("Method", "Update Min Delay")
         .add_attribute("Sender", &info.sender.to_string())
         .add_attribute("New Min Delay", timelock.min_time_delay.to_string())
+        .add_attribute("Result", "Success"))
+}
+
+pub fn execute_freeze(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let mut timelock = CONFIG.load(deps.storage)?;
+
+    if timelock.frozen {
+        return Err(ContractError::TimelockFrozen {});
+    }
+
+    if !timelock.admins.contains(&info.sender) {
+        return Err(ContractError::Unauthorized {});
+    }
+
+    timelock.frozen = true;
+
+    CONFIG.save(deps.storage, &timelock)?;
+
+    Ok(Response::new()
+        .add_attribute("Method", "freeze")
+        .add_attribute("sender", &info.sender)
         .add_attribute("Result", "Success"))
 }
 

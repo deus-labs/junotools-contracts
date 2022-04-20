@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ExecuteMsg",
-  "anyOf": [
+  "oneOf": [
     {
       "type": "object",
       "required": [
@@ -166,6 +166,18 @@
         }
       },
       "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "freeze"
+      ],
+      "properties": {
+        "freeze": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
     }
   ],
   "definitions": {
@@ -175,7 +187,7 @@
     },
     "Duration": {
       "description": "Duration is a delta of time. You can add it to a BlockInfo or Expiration to move that further in the future. Note that an height-based Duration and a time-based Expiration cannot be combined",
-      "anyOf": [
+      "oneOf": [
         {
           "type": "object",
           "required": [
@@ -209,7 +221,7 @@
     },
     "Scheduled": {
       "description": "Scheduled represents a point in time when an event happens. It can compare with a BlockInfo and will return is_triggered() == true once the condition is hit (and for every block in the future)",
-      "anyOf": [
+      "oneOf": [
         {
           "description": "AtHeight will schedule when `env.block.height` >= height",
           "type": "object",

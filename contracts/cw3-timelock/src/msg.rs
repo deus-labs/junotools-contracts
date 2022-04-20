@@ -46,6 +46,8 @@ pub enum ExecuteMsg {
     UpdateMinDelay {
         new_delay: Duration,
     },
+
+    Freeze {},
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

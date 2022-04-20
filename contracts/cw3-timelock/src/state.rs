@@ -10,6 +10,7 @@ pub struct Timelock {
     pub admins: Vec<Addr>,
     pub proposers: Vec<Addr>,
     pub min_time_delay: Duration,
+    pub frozen: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]

@@ -16,7 +16,7 @@ pub enum ContractError {
     #[error("Address {address:?} not found in Proposers")]
     NotFound {address: String},
 
-    #[error("Can not delete executed proposals")]
+    #[error("Executed operations can not be cancelled.")]
     NotDeletable {},
 
     #[error("Proposers list already contains this proposer address")]
@@ -27,6 +27,9 @@ pub enum ContractError {
 
     #[error("This operation already executed.")]
     Executed {},
+
+    #[error("Changes can not be made on a frozen Timelock contract.")]
+    TimelockFrozen {},
 
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
