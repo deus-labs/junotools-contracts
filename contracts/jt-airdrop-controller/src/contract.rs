@@ -256,7 +256,7 @@ pub fn execute_release_funds(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
         QueryMsg::Config {} => to_binary(&query_config(deps)?),
         QueryMsg::Escrow {
@@ -265,7 +265,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
         } => to_binary(&query_escrow(deps, airdrop_addr, stage)?),
         QueryMsg::ListEscrows { start_after, limit } => {
             to_binary(&query_list_escrows(deps, start_after, limit)?)
-        }
+        },
+        QueryMsg::ListExpiredEscrows { start_after, limit } => {
+            to_binary(&query_list_expired_escrows(deps, env, start_after, limit)?)
+        },
     }
 }
 
@@ -312,6 +315,35 @@ fn query_list_escrows(
         .collect::<StdResult<Vec<_>>>()?;
     let escrows = escrows
         .into_iter()
+        .map(|(_, e)| EscrowResponse {
+            source: e.source.to_string(),
+            expiration: e.expiration,
+            escrow_amount: e.escrow_amount,
+            latest_stage: e.latest_stage,
+            released: e.released,
+        })
+        .collect();
+
+    Ok(ListEscrowsResponse { escrows })
+}
+
+fn query_list_expired_escrows(
+    deps: Deps,
+    env: Env,
+    start_after: Option<String>,
+    limit: Option<u32>,
+) -> StdResult<ListEscrowsResponse> {
+    let limit = limit.unwrap_or(DEFAULT_LIMIT).min(MAX_LIMIT) as usize;
+
+    let start = start_after.map(|s| Bound::ExclusiveRaw(s.into()));
+
+    let escrows = ESCROWS
+        .range(deps.storage, start, None, Order::Ascending)
+        .take(limit.into())
+        .collect::<StdResult<Vec<_>>>()?;
+    let escrows = escrows
+        .into_iter()
+        .filter(|(_, e)| e.expiration.is_expired(&env.block) && e.released == false)
         .map(|(_, e)| EscrowResponse {
             source: e.source.to_string(),
             expiration: e.expiration,
@@ -374,10 +406,10 @@ mod tests {
         })
     }
 
-    const ADMIN: &str = "ADMIN";
-    const USER: &str = "USER";
-    const RANDOM: &str = "RANDOM";
-    const RELEASE_ADDR: &str = "RELEASE_ADDR";
+    const ADMIN: &str = "juno1xxfvvf6gukus6paasyjfhgmzmmdc25q6ww6hez";
+    const USER: &str = "juno1mg83cpata7hz33cuw3v0z4l0zrtlchnqv3zgfl";
+    const RANDOM: &str = "juno1hfx3mlyy30450u8fe5enyywtl3e2wnkhuy44qg";
+    const RELEASE_ADDR: &str = "juno19ayrkzcfpgw8ht7cugmcmm4ca96zwp5auect33";
     const NATIVE_DENOM: &str = "ujunox";
     const ESCROW_AMOUNT: u128 = 100;
     const DEFAULT_RELEASE: u64 = 10;
@@ -695,5 +727,57 @@ mod tests {
         assert_eq!(res.escrow_amount, Uint128::new(6));
         assert_eq!(res.release_height_delta, Uint64::new(69));
         assert_eq!(res.allowed_native, "unew");
+    }
+
+    mod queries {
+        use super::*;
+        use cosmwasm_std::BlockInfo;
+
+        #[test]
+        fn query_expired_escrows() {
+            let (mut app, _cw20_base_addr, _cw20_airdrop_addr, jt_controller_addr) =
+                proper_instantiate();
+    
+            app.set_block(BlockInfo {
+                height: 1,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+    
+            // cannot send without tokens
+            let msg = ExecuteMsg::LockFunds {
+                airdrop_addr: _cw20_airdrop_addr.clone(),
+            };
+            let cosmos_msg = CosmosMsg::from(WasmMsg::Execute {
+                contract_addr: jt_controller_addr.clone(),
+                msg: to_binary(&msg).unwrap(),
+                funds: vec![Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(ESCROW_AMOUNT),
+                }],
+            });
+            app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+    
+            let msg = QueryMsg::ListExpiredEscrows { start_after: None, limit: None };
+            let res: ListEscrowsResponse = app
+            .wrap()
+            .query_wasm_smart(&jt_controller_addr, &msg)
+            .unwrap();
+            assert_eq!(res.escrows.len(), 0);
+
+            app.set_block(BlockInfo {
+                height: 150,
+                time: Default::default(),
+                chain_id: "".to_string(),
+            });
+
+            let msg = QueryMsg::ListExpiredEscrows { start_after: None, limit: None };
+            let res: ListEscrowsResponse = app
+            .wrap()
+            .query_wasm_smart(jt_controller_addr, &msg)
+            .unwrap();
+            assert_eq!(res.escrows.len(), 1);
+            assert_eq!(res.escrows[0].released, false);
+        }
     }
 }
