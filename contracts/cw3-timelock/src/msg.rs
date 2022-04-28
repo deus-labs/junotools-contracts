@@ -46,7 +46,6 @@ pub enum ExecuteMsg {
     UpdateMinDelay {
         new_delay: Duration,
     },
-
     Freeze {},
 }
 
@@ -90,18 +89,19 @@ pub struct OperationResponse {
     pub description: String,
 }
 
-impl Into<OperationResponse> for Operation {
-    fn into(self) -> OperationResponse {
+//impl Into<OperationResponse> for Operation changed to from due to lint warning
+impl From<Operation> for OperationResponse {
+    fn from(operation: Operation) -> OperationResponse {
         OperationResponse {
-            id: self.id,
-            status: self.status,
-            proposer: self.proposer,
-            executors: self.executors,
-            execution_time: self.execution_time,
-            target: self.target,
-            data: self.data,
-            title: self.title,
-            description: self.description,
+            id: operation.id,
+            status: operation.status,
+            proposer: operation.proposer,
+            executors: operation.executors,
+            execution_time: operation.execution_time,
+            target: operation.target,
+            data: operation.data,
+            title: operation.title,
+            description: operation.description,
         }
     }
 }

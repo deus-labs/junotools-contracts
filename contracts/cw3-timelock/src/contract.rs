@@ -7,12 +7,12 @@ use cosmwasm_std::{
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
-use std::ops::Add;
 use cw_utils::{Duration, Scheduled};
+use std::ops::Add;
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, OperationListResponse, QueryMsg};
-use crate::state::{Operation, OperationStatus, Timelock, OPERATION_LIST, OPERATION_SEQ, CONFIG};
+use crate::state::{Operation, OperationStatus, Timelock, CONFIG, OPERATION_LIST, OPERATION_SEQ};
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:cw3-timelock";
@@ -21,7 +21,7 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
     deps: DepsMut,
-    _env: Env,
+    env: Env,
     info: MessageInfo,
     msg: InstantiateMsg,
 ) -> Result<Response, ContractError> {
@@ -31,14 +31,15 @@ pub fn instantiate(
             admins.push(info.sender.clone());
         }
         Some(admin_list) => {
-            for admin in admin_list{
+            for admin in admin_list {
                 admins.push(deps.api.addr_validate(&admin)?);
             }
         }
     }
+    admins.push(env.contract.address);
 
     let mut proposers = vec![];
-    for proposer in msg.proposers{
+    for proposer in msg.proposers {
         proposers.push(deps.api.addr_validate(&proposer)?);
     }
 
@@ -94,18 +95,24 @@ pub fn execute(
         ),
         ExecuteMsg::Execute { operation_id } => execute_execute(deps, _env, info, operation_id),
         ExecuteMsg::Cancel { operation_id } => execute_cancel(deps, _env, info, operation_id),
-        ExecuteMsg::RevokeAdmin { admin_address } => execute_revoke_admin(deps, _env, info, admin_address),
+        ExecuteMsg::RevokeAdmin { admin_address } => {
+            execute_revoke_admin(deps, _env, info, admin_address)
+        }
         ExecuteMsg::AddProposer { proposer_address } => {
             execute_add_proposer(deps, _env, info, proposer_address)
         }
         ExecuteMsg::RemoveProposer { proposer_address } => {
             execute_remove_proposer(deps, _env, info, proposer_address)
         }
-        ExecuteMsg::UpdateMinDelay { new_delay } => execute_update_min_delay(deps, _env, info, new_delay),
+        ExecuteMsg::UpdateMinDelay { new_delay } => {
+            execute_update_min_delay(deps, _env, info, new_delay)
+        }
         ExecuteMsg::Freeze {} => execute_freeze(deps, _env, info),
     }
 }
 
+/*eslint too-many-arguments-threshold:9 */
+#[allow(clippy::too_many_arguments)]
 pub fn execute_schedule(
     deps: DepsMut,
     env: Env,
@@ -136,7 +143,7 @@ pub fn execute_schedule(
         None => {}
         Some(list) => {
             let mut checked_executors = vec![];
-            for executor in list{
+            for executor in list {
                 checked_executors.push(deps.api.addr_validate(&executor)?);
             }
             executors = Option::from(checked_executors);
@@ -161,10 +168,7 @@ pub fn execute_schedule(
         .add_attribute("Operation ID: ", id)
         .add_attribute("Proposer: ", new_operation.proposer)
         .add_attribute("Target Address: ", new_operation.target.to_string())
-        .add_attribute(
-            "Execution Time: ",
-            new_operation.execution_time.to_string(),
-        ))
+        .add_attribute("Execution Time: ", new_operation.execution_time.to_string()))
 }
 
 pub fn execute_execute(
@@ -175,10 +179,11 @@ pub fn execute_execute(
 ) -> Result<Response, ContractError> {
     let mut operation = OPERATION_LIST.load(deps.storage, operation_id.u64())?;
 
+    //is delay ended
     if !operation.execution_time.is_triggered(&env.block) {
         return Err(ContractError::Unexpired {});
     }
-
+    //has executer list if so sender is in it
     if operation.executors.is_some()
         && !operation
             .executors
@@ -238,22 +243,22 @@ pub fn execute_revoke_admin(
     admin_address: String,
 ) -> Result<Response, ContractError> {
     let mut timelock = CONFIG.load(deps.storage)?;
-
     if timelock.frozen {
         return Err(ContractError::TimelockFrozen {});
     }
-
     if !timelock.admins.contains(&info.sender) {
         return Err(ContractError::Unauthorized {});
     }
 
-    let admin_address= deps.api.addr_validate(&admin_address)?;
+    let admin_address = deps.api.addr_validate(&admin_address)?;
 
     let index = timelock
         .admins
         .iter()
         .position(|x| *x == admin_address.clone())
-        .ok_or(ContractError::NotFound {address: admin_address.clone().to_string()})?;
+        .ok_or(ContractError::NotFound {
+            address: admin_address.clone().to_string(),
+        })?;
 
     timelock.admins.remove(index);
     CONFIG.save(deps.storage, &timelock)?;
@@ -287,12 +292,11 @@ pub fn execute_add_proposer(
         return Err(ContractError::AlreadyContainsProposerAddress {});
     }
 
-    timelock.proposers.push(proposer_address.clone());
+    timelock.proposers.push(proposer_address);
     CONFIG.save(deps.storage, &timelock)?;
     Ok(Response::new()
         .add_attribute("Method", "add_proposer")
         .add_attribute("sender", &info.sender)
-        .add_attribute("Proposer", proposer_address.clone())
         .add_attribute("Result", "Success"))
 }
 
@@ -318,14 +322,15 @@ pub fn execute_remove_proposer(
         .proposers
         .iter()
         .position(|x| *x == proposer_address.clone())
-        .ok_or(ContractError::NotFound {address: proposer_address.clone().to_string()})?;
+        .ok_or(ContractError::NotFound {
+            address: proposer_address.clone().to_string(),
+        })?;
 
     timelock.proposers.remove(index);
     CONFIG.save(deps.storage, &timelock)?;
     Ok(Response::new()
         .add_attribute("Method", "remove_proposer")
         .add_attribute("sender", &info.sender)
-        .add_attribute("Proposer", proposer_address.clone())
         .add_attribute("Result", "Success"))
 }
 
@@ -354,7 +359,6 @@ pub fn execute_update_min_delay(
         .add_attribute("New Min Delay", timelock.min_time_delay.to_string())
         .add_attribute("Result", "Success"))
 }
-
 pub fn execute_freeze(
     deps: DepsMut,
     _env: Env,
@@ -450,14 +454,14 @@ pub fn query_get_proposers(deps: Deps) -> StdResult<Vec<Addr>> {
 
 pub fn query_get_executors(deps: Deps, operation_id: Uint64) -> StdResult<Vec<Addr>> {
     let operation = OPERATION_LIST.load(deps.storage, operation_id.u64())?;
-    Ok(operation.executors.unwrap_or(vec![]))
+    Ok(operation.executors.unwrap_or_default())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-    use cosmwasm_std::{Timestamp};
+    use cosmwasm_std::Timestamp;
     use cw_utils::Scheduled;
 
     #[test]
@@ -472,7 +476,7 @@ mod tests {
         };
         let info = mock_info("creator", &[]);
         let description = "test desc".to_string();
-
+        let title = "Title Example ".to_string();
         // instantiate
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
         println!("{:?}", res);
@@ -508,10 +512,7 @@ mod tests {
             Option::None,
         )
         .unwrap_err();
-        assert_eq!(
-            res,
-            ContractError::MinDelayNotSatisfied {}
-        );
+        assert_eq!(res, ContractError::MinDelayNotSatisfied {});
 
         //Schedule() sender "prop1" execution_time > env.block.time && min_delay_time > execution_time - env.block.time
         let res = execute_schedule(
@@ -555,6 +556,7 @@ mod tests {
             min_delay: Duration::Time(10),
         };
         let info = mock_info("creator", &[]);
+        let title = "Title Example ".to_string();
 
         // instantiate
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
@@ -609,6 +611,7 @@ mod tests {
             min_delay: Duration::Time(10),
         };
         let info = mock_info("creator", &[]);
+        let title = "Title Example ".to_string();
 
         // instantiate
         let res = instantiate(deps.as_mut(), env.clone(), info.clone(), msg).unwrap();
@@ -644,7 +647,8 @@ mod tests {
         println!("{:?}", res);
 
         //try Cancel() sender "prop1" operation_id "1" status "OperationStatus::Done"
-        let res = execute_cancel(deps.as_mut(), env.clone(), info.clone(), Uint64::new(1)).unwrap_err();
+        let res =
+            execute_cancel(deps.as_mut(), env.clone(), info.clone(), Uint64::new(1)).unwrap_err();
         assert_eq!(res, ContractError::NotDeletable {});
 
         //Schedule() sender "prop1"
@@ -667,7 +671,8 @@ mod tests {
         println!("{:?}", res);
 
         //try Cancel() sender "nobody" operation_id "2" admin "creator" proposers "prop1, prop2"
-        let res = execute_cancel(deps.as_mut(), env.clone(), info.clone(), Uint64::new(2)).unwrap_err();
+        let res =
+            execute_cancel(deps.as_mut(), env.clone(), info.clone(), Uint64::new(2)).unwrap_err();
         println!("{:?}", res);
 
         //Schedule() sender "prop1"
@@ -687,7 +692,8 @@ mod tests {
 
         let info = mock_info("nobody", &[]);
         //try Cancel() sender "nobody" operation_id "3" admin "creator" proposers "prop1, prop2"
-        let res = execute_cancel(deps.as_mut(), env.clone(), info.clone(), Uint64::new(3)).unwrap_err();
+        let res =
+            execute_cancel(deps.as_mut(), env.clone(), info.clone(), Uint64::new(3)).unwrap_err();
         assert_eq!(res, ContractError::Unauthorized {});
     }
 
@@ -708,28 +714,60 @@ mod tests {
         println!("{:?}", res);
 
         //try remove_proposer sender "creator" proposer_address "prop1" proposers ""
-        let res =
-            execute_remove_proposer(deps.as_mut(), env.clone(), info.clone(), "prop1".to_string()).unwrap_err();
-        assert_eq!(res, ContractError::NotFound {address: "prop1".to_string()});
+        let res = execute_remove_proposer(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "prop1".to_string(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            res,
+            ContractError::NotFound {
+                address: "prop1".to_string()
+            }
+        );
 
         let info = mock_info("no_admin", &[]);
         //try remove_proposer sender "no_admin" proposer_address "prop1" proposers ""
-        let res =
-            execute_remove_proposer(deps.as_mut(), env.clone(), info.clone(), "prop1".to_string()).unwrap_err();
+        let res = execute_remove_proposer(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "prop1".to_string(),
+        )
+        .unwrap_err();
         assert_eq!(res, ContractError::Unauthorized {});
 
         //try add_proposer sender "no_admin" proposer_address "prop1" proposers ""
-        let res =
-            execute_add_proposer(deps.as_mut(), env.clone(), info.clone(), "prop1".to_string()).unwrap_err();
+        let res = execute_add_proposer(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "prop1".to_string(),
+        )
+        .unwrap_err();
         assert_eq!(res, ContractError::Unauthorized {});
 
         let info = mock_info("creator", &[]);
         //add_proposer sender "creator" proposer_address "prop1" proposers ""
-        let res = execute_add_proposer(deps.as_mut(), env.clone(), info.clone(), "prop1".to_string()).unwrap();
+        let res = execute_add_proposer(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "prop1".to_string(),
+        )
+        .unwrap();
         println!("{:?}", res);
 
         //remove_proposer sender "no_admin" proposer_address "prop1" proposers "prop1"
-        let res = execute_remove_proposer(deps.as_mut(), env.clone(), info.clone(), "prop1".to_string()).unwrap();
+        let res = execute_remove_proposer(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "prop1".to_string(),
+        )
+        .unwrap();
         println!("{:?}", res);
     }
 
@@ -750,14 +788,24 @@ mod tests {
         println!("{:?}", res);
 
         //update_min_delay() sender "creator"
-        let res =
-            execute_update_min_delay(deps.as_mut(), env.clone(), info.clone(), Duration::Time(100)).unwrap();
+        let res = execute_update_min_delay(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            Duration::Time(100),
+        )
+        .unwrap();
         println!("{:?}", res);
 
         let info = mock_info("no_admin", &[]);
         //try update_min_delay() sender "no_admin"
-        let res = execute_update_min_delay(deps.as_mut(), env.clone(), info.clone(), Duration::Time(100))
-            .unwrap_err();
+        let res = execute_update_min_delay(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            Duration::Time(100),
+        )
+        .unwrap_err();
         assert_eq!(res, ContractError::Unauthorized {});
     }
 
@@ -778,15 +826,38 @@ mod tests {
         println!("{:?}", res);
 
         //try revoke_admin() sender "creator" admin_address "not_in_it" admin "creator"
-        let res = execute_revoke_admin(deps.as_mut(), env.clone(), info.clone(), "not_in_it".to_string()).unwrap_err();
-        assert_eq!(res, ContractError::NotFound {address: "not_in_it".to_string()});
+        let res = execute_revoke_admin(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "not_in_it".to_string(),
+        )
+        .unwrap_err();
+        assert_eq!(
+            res,
+            ContractError::NotFound {
+                address: "not_in_it".to_string()
+            }
+        );
 
         //revoke_admin() sender "creator" admin_address "creator" admin "creator"
-        let res = execute_revoke_admin(deps.as_mut(), env.clone(), info.clone(), "creator".to_string()).unwrap();
+        let res = execute_revoke_admin(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "creator".to_string(),
+        )
+        .unwrap();
         println!("{:?}", res);
 
         //try revoke_admin() sender "creator" admin_address "creator" admin ""
-        let res = execute_revoke_admin(deps.as_mut(), env.clone(), info.clone(), "creator".to_string()).unwrap_err();
+        let res = execute_revoke_admin(
+            deps.as_mut(),
+            env.clone(),
+            info.clone(),
+            "creator".to_string(),
+        )
+        .unwrap_err();
         assert_eq!(res, ContractError::Unauthorized {});
     }
 }

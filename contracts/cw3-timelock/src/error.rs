@@ -1,6 +1,5 @@
-use cosmwasm_std::{StdError};
+use cosmwasm_std::StdError;
 use thiserror::Error;
-
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ContractError {
@@ -14,7 +13,7 @@ pub enum ContractError {
     Unexpired {},
 
     #[error("Address {address:?} not found in Proposers")]
-    NotFound {address: String},
+    NotFound { address: String },
 
     #[error("Executed operations can not be cancelled.")]
     NotDeletable {},
@@ -30,7 +29,6 @@ pub enum ContractError {
 
     #[error("Changes can not be made on a frozen Timelock contract.")]
     TimelockFrozen {},
-
     // Add any other custom errors you like here.
     // Look at https://docs.rs/thiserror/1.0.21/thiserror/ for details.
 }
