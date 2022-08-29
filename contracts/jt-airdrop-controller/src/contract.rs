@@ -34,13 +34,8 @@ pub fn instantiate(
         .clone()
         .map_or(Ok(info.sender), |o| deps.api.addr_validate(&o))?;
 
-    let release_addr = msg
-        .release_addr
-        .map_or(Ok(admin.clone()), |o| deps.api.addr_validate(&o))?;
-
     let config = Config {
         admin: admin.clone(),
-        release_addr: release_addr.clone(),
         escrow_amount: msg.escrow_amount,
         release_height_delta: msg.release_height_delta,
         allowed_native: msg.allowed_native,
@@ -52,7 +47,6 @@ pub fn instantiate(
     Ok(Response::new()
         .add_attribute("action", "instantiate")
         .add_attribute("admin", admin)
-        .add_attribute("release_addr", release_addr.as_str())
         .add_attribute("escrow_amount", msg.escrow_amount))
 }
 
@@ -66,7 +60,6 @@ pub fn execute(
     match msg {
         ExecuteMsg::UpdateConfig {
             admin,
-            release_addr,
             escrow_amount,
             release_height_delta: default_release_height,
             allowed_native,
@@ -75,7 +68,6 @@ pub fn execute(
             info,
             env,
             admin,
-            release_addr,
             escrow_amount,
             default_release_height,
             allowed_native,
@@ -93,7 +85,6 @@ pub fn execute_update_config(
     info: MessageInfo,
     _env: Env,
     admin: Option<String>,
-    release_addr: Option<String>,
     escrow_amount: Option<Uint128>,
     default_release_height: Option<Uint64>,
     allowed_native: Option<String>,
@@ -106,9 +97,6 @@ pub fn execute_update_config(
 
     if let Some(admin) = admin {
         cfg.admin = deps.api.addr_validate(&admin)?;
-    }
-    if let Some(release_addr) = release_addr {
-        cfg.release_addr = deps.api.addr_validate(&release_addr)?;
     }
     if let Some(escrow_amount) = escrow_amount {
         cfg.escrow_amount = escrow_amount;
@@ -181,7 +169,7 @@ pub fn execute_lock_funds(
 
 pub fn execute_release_funds(
     deps: DepsMut,
-    _info: MessageInfo,
+    info: MessageInfo,
     env: Env,
     airdrop_addr: String,
     stage: u8,
@@ -196,12 +184,17 @@ pub fn execute_release_funds(
 
     // if expired dao can withdraw
     if escrow.expiration.is_expired(&env.block) {
+        // only admin can release expired escrows
+        if cfg.admin != info.sender {
+            return Err(ContractError::Unauthorized {});
+        }
+
         // update escrow
         escrow.released = true;
         ESCROWS.save(deps.storage, (&airdrop_addr, stage), &escrow)?;
 
         let send_fund_msg = BankMsg::Send {
-            to_address: cfg.release_addr.to_string(),
+            to_address: escrow.source.to_string(),
             amount: vec![Coin {
                 denom: cfg.allowed_native,
                 amount: escrow.escrow_amount,
@@ -213,7 +206,7 @@ pub fn execute_release_funds(
             .add_attributes(vec![
                 ("action", "release_funds"),
                 ("escrow_amount", &cfg.escrow_amount.to_string()),
-                ("release_addr", &cfg.release_addr.to_string()),
+                ("release_addr", &escrow.source.to_string()),
                 ("airdrop_addr", &airdrop_addr.to_string()),
             ]);
         return Ok(res);
@@ -278,7 +271,6 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         admin: cfg.admin,
         escrow_amount: cfg.escrow_amount,
         release_height_delta: cfg.release_height_delta,
-        release_addr: cfg.release_addr,
         allowed_native: cfg.allowed_native,
     })
 }
@@ -409,7 +401,6 @@ mod tests {
     const ADMIN: &str = "juno1xxfvvf6gukus6paasyjfhgmzmmdc25q6ww6hez";
     const USER: &str = "juno1mg83cpata7hz33cuw3v0z4l0zrtlchnqv3zgfl";
     const RANDOM: &str = "juno1hfx3mlyy30450u8fe5enyywtl3e2wnkhuy44qg";
-    const RELEASE_ADDR: &str = "juno19ayrkzcfpgw8ht7cugmcmm4ca96zwp5auect33";
     const NATIVE_DENOM: &str = "ujunox";
     const ESCROW_AMOUNT: u128 = 100;
     const DEFAULT_RELEASE: u64 = 10;
@@ -473,7 +464,6 @@ mod tests {
 
         let msg = InstantiateMsg {
             admin: Some(ADMIN.to_string()),
-            release_addr: Some(RELEASE_ADDR.to_string()),
             escrow_amount: Uint128::new(ESCROW_AMOUNT),
             allowed_native: NATIVE_DENOM.to_string(),
             release_height_delta: Uint64::new(DEFAULT_RELEASE),
@@ -545,9 +535,9 @@ mod tests {
         use super::*;
         use cosmwasm_std::BlockInfo;
 
-        // if expired dao can release
+        // if expired admin can release
         #[test]
-        fn dao_can_release() {
+        fn admin_can_release() {
             let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
                 proper_instantiate();
 
@@ -571,6 +561,15 @@ mod tests {
             });
             app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
 
+            let balance = app.wrap().query_balance(USER, NATIVE_DENOM).unwrap();
+            assert_eq!(
+                balance,
+                Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(0)
+                }
+            );
+
             app.set_block(BlockInfo {
                 height: 150,
                 time: Default::default(),
@@ -586,7 +585,7 @@ mod tests {
                 msg: to_binary(&msg).unwrap(),
                 funds: vec![],
             });
-            let res = app.execute(Addr::unchecked(RANDOM), cosmos_msg).unwrap();
+            let res = app.execute(Addr::unchecked(ADMIN), cosmos_msg).unwrap();
             let event = res
                 .events
                 .into_iter()
@@ -596,10 +595,10 @@ mod tests {
                 .into_iter()
                 .find(|e| e.key == "release_addr")
                 .unwrap();
-            assert_eq!(event.value, RELEASE_ADDR);
+            assert_eq!(event.value, USER);
             let balance = app
                 .wrap()
-                .query_balance(RELEASE_ADDR, NATIVE_DENOM)
+                .query_balance(USER, NATIVE_DENOM)
                 .unwrap();
             assert_eq!(
                 balance,
@@ -635,6 +634,15 @@ mod tests {
                 }],
             });
             app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
+
+            let balance = app.wrap().query_balance(USER, NATIVE_DENOM).unwrap();
+            assert_eq!(
+                balance,
+                Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(0)
+                }
+            );
 
             // register root
             let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
@@ -694,7 +702,6 @@ mod tests {
 
         let msg = ExecuteMsg::UpdateConfig {
             admin: Some("new_admin".to_string()),
-            release_addr: Some("new_release".to_string()),
             escrow_amount: Some(Uint128::new(6)),
             release_height_delta: Some(Uint64::new(69)),
             allowed_native: Some("unew".to_string()),
@@ -723,7 +730,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.admin, "new_admin");
-        assert_eq!(res.release_addr, "new_release");
         assert_eq!(res.escrow_amount, Uint128::new(6));
         assert_eq!(res.release_height_delta, Uint64::new(69));
         assert_eq!(res.allowed_native, "unew");
