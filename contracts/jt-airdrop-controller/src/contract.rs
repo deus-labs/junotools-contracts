@@ -626,6 +626,15 @@ mod tests {
             });
             app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
 
+            let balance = app.wrap().query_balance(USER, NATIVE_DENOM).unwrap();
+            assert_eq!(
+                balance,
+                Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(0)
+                }
+            );
+
             // register root
             let register_msg = cw20_merkle_airdrop::msg::ExecuteMsg::RegisterMerkleRoot {
                 merkle_root: MERKLE_ROOT.to_string(),
