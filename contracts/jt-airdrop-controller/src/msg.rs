@@ -20,7 +20,6 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     UpdateConfig {
         admin: Option<String>,
-        release_addr: Option<String>,
         escrow_amount: Option<Uint128>,
         release_height_delta: Option<Uint64>,
         allowed_native: Option<String>,
@@ -55,8 +54,6 @@ pub enum QueryMsg {
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ConfigResponse {
     pub admin: Addr,
-    /// ReleaseAddr is the address of the released unproven airdrops
-    pub release_addr: Addr,
     pub escrow_amount: Uint128,
     /// release height is current_height + default_heighjt
     pub release_height_delta: Uint64,

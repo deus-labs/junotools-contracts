@@ -8,8 +8,6 @@ use cw_utils::Expiration;
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
     pub admin: Addr,
-    /// ReleaseAddr is the address of the released unproven airdrops
-    pub release_addr: Addr,
     pub escrow_amount: Uint128,
     /// release_height_delta gets added to the current block height
     pub release_height_delta: Uint64,
