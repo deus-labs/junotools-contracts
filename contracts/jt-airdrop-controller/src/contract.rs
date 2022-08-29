@@ -34,10 +34,6 @@ pub fn instantiate(
         .clone()
         .map_or(Ok(info.sender), |o| deps.api.addr_validate(&o))?;
 
-    let release_addr = msg
-        .release_addr
-        .map_or(Ok(admin.clone()), |o| deps.api.addr_validate(&o))?;
-
     let config = Config {
         admin: admin.clone(),
         escrow_amount: msg.escrow_amount,
@@ -51,7 +47,6 @@ pub fn instantiate(
     Ok(Response::new()
         .add_attribute("action", "instantiate")
         .add_attribute("admin", admin)
-        .add_attribute("release_addr", release_addr.as_str())
         .add_attribute("escrow_amount", msg.escrow_amount))
 }
 
@@ -406,7 +401,6 @@ mod tests {
     const ADMIN: &str = "juno1xxfvvf6gukus6paasyjfhgmzmmdc25q6ww6hez";
     const USER: &str = "juno1mg83cpata7hz33cuw3v0z4l0zrtlchnqv3zgfl";
     const RANDOM: &str = "juno1hfx3mlyy30450u8fe5enyywtl3e2wnkhuy44qg";
-    const RELEASE_ADDR: &str = "juno19ayrkzcfpgw8ht7cugmcmm4ca96zwp5auect33";
     const NATIVE_DENOM: &str = "ujunox";
     const ESCROW_AMOUNT: u128 = 100;
     const DEFAULT_RELEASE: u64 = 10;
@@ -470,7 +464,6 @@ mod tests {
 
         let msg = InstantiateMsg {
             admin: Some(ADMIN.to_string()),
-            release_addr: Some(RELEASE_ADDR.to_string()),
             escrow_amount: Uint128::new(ESCROW_AMOUNT),
             allowed_native: NATIVE_DENOM.to_string(),
             release_height_delta: Uint64::new(DEFAULT_RELEASE),
@@ -542,9 +535,9 @@ mod tests {
         use super::*;
         use cosmwasm_std::BlockInfo;
 
-        // if expired dao can release
+        // if expired admin can release
         #[test]
-        fn dao_can_release() {
+        fn admin_can_release() {
             let (mut app, _cw20_base_addr, cw20_airdrop_addr, jt_controller_addr) =
                 proper_instantiate();
 
@@ -583,7 +576,7 @@ mod tests {
                 msg: to_binary(&msg).unwrap(),
                 funds: vec![],
             });
-            let res = app.execute(Addr::unchecked(RANDOM), cosmos_msg).unwrap();
+            let res = app.execute(Addr::unchecked(ADMIN), cosmos_msg).unwrap();
             let event = res
                 .events
                 .into_iter()
@@ -593,10 +586,10 @@ mod tests {
                 .into_iter()
                 .find(|e| e.key == "release_addr")
                 .unwrap();
-            assert_eq!(event.value, RELEASE_ADDR);
+            assert_eq!(event.value, USER);
             let balance = app
                 .wrap()
-                .query_balance(RELEASE_ADDR, NATIVE_DENOM)
+                .query_balance(USER, NATIVE_DENOM)
                 .unwrap();
             assert_eq!(
                 balance,
