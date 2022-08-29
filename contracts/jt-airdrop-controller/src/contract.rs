@@ -561,6 +561,15 @@ mod tests {
             });
             app.execute(Addr::unchecked(USER), cosmos_msg).unwrap();
 
+            let balance = app.wrap().query_balance(USER, NATIVE_DENOM).unwrap();
+            assert_eq!(
+                balance,
+                Coin {
+                    denom: NATIVE_DENOM.to_string(),
+                    amount: Uint128::new(0)
+                }
+            );
+
             app.set_block(BlockInfo {
                 height: 150,
                 time: Default::default(),
