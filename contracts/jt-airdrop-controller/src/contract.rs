@@ -40,7 +40,6 @@ pub fn instantiate(
 
     let config = Config {
         admin: admin.clone(),
-        release_addr: release_addr.clone(),
         escrow_amount: msg.escrow_amount,
         release_height_delta: msg.release_height_delta,
         allowed_native: msg.allowed_native,
@@ -66,7 +65,6 @@ pub fn execute(
     match msg {
         ExecuteMsg::UpdateConfig {
             admin,
-            release_addr,
             escrow_amount,
             release_height_delta: default_release_height,
             allowed_native,
@@ -75,7 +73,6 @@ pub fn execute(
             info,
             env,
             admin,
-            release_addr,
             escrow_amount,
             default_release_height,
             allowed_native,
@@ -93,7 +90,6 @@ pub fn execute_update_config(
     info: MessageInfo,
     _env: Env,
     admin: Option<String>,
-    release_addr: Option<String>,
     escrow_amount: Option<Uint128>,
     default_release_height: Option<Uint64>,
     allowed_native: Option<String>,
@@ -106,9 +102,6 @@ pub fn execute_update_config(
 
     if let Some(admin) = admin {
         cfg.admin = deps.api.addr_validate(&admin)?;
-    }
-    if let Some(release_addr) = release_addr {
-        cfg.release_addr = deps.api.addr_validate(&release_addr)?;
     }
     if let Some(escrow_amount) = escrow_amount {
         cfg.escrow_amount = escrow_amount;
@@ -181,7 +174,7 @@ pub fn execute_lock_funds(
 
 pub fn execute_release_funds(
     deps: DepsMut,
-    _info: MessageInfo,
+    info: MessageInfo,
     env: Env,
     airdrop_addr: String,
     stage: u8,
@@ -196,12 +189,17 @@ pub fn execute_release_funds(
 
     // if expired dao can withdraw
     if escrow.expiration.is_expired(&env.block) {
+        // only admin can release expired escrows
+        if cfg.admin != info.sender {
+            return Err(ContractError::Unauthorized {});
+        }
+
         // update escrow
         escrow.released = true;
         ESCROWS.save(deps.storage, (&airdrop_addr, stage), &escrow)?;
 
         let send_fund_msg = BankMsg::Send {
-            to_address: cfg.release_addr.to_string(),
+            to_address: escrow.source.to_string(),
             amount: vec![Coin {
                 denom: cfg.allowed_native,
                 amount: escrow.escrow_amount,
@@ -213,7 +211,7 @@ pub fn execute_release_funds(
             .add_attributes(vec![
                 ("action", "release_funds"),
                 ("escrow_amount", &cfg.escrow_amount.to_string()),
-                ("release_addr", &cfg.release_addr.to_string()),
+                ("release_addr", &escrow.source.to_string()),
                 ("airdrop_addr", &airdrop_addr.to_string()),
             ]);
         return Ok(res);
@@ -278,7 +276,6 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
         admin: cfg.admin,
         escrow_amount: cfg.escrow_amount,
         release_height_delta: cfg.release_height_delta,
-        release_addr: cfg.release_addr,
         allowed_native: cfg.allowed_native,
     })
 }
@@ -694,7 +691,6 @@ mod tests {
 
         let msg = ExecuteMsg::UpdateConfig {
             admin: Some("new_admin".to_string()),
-            release_addr: Some("new_release".to_string()),
             escrow_amount: Some(Uint128::new(6)),
             release_height_delta: Some(Uint64::new(69)),
             allowed_native: Some("unew".to_string()),
@@ -723,7 +719,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.admin, "new_admin");
-        assert_eq!(res.release_addr, "new_release");
         assert_eq!(res.escrow_amount, Uint128::new(6));
         assert_eq!(res.release_height_delta, Uint64::new(69));
         assert_eq!(res.allowed_native, "unew");
