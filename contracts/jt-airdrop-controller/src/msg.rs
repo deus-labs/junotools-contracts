@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 pub struct InstantiateMsg {
     /// Admin if none set to sender
     pub admin: Option<String>,
-    /// ReleaseAddr if not set, set to admin
-    pub release_addr: Option<String>,
     pub escrow_amount: Uint128,
     pub allowed_native: String,
     /// release_height_delta gets added to the current block height
